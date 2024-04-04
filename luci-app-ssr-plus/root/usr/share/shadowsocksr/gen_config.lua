@@ -116,57 +116,20 @@ end
 local settings = outbound:new()
 settings:handleIndex(server.v2ray_protocol)
 local Xray = {
-	-- 日志
-	log = (server.custom_log == "1") and {
-		loglevel = server.custom_loglevel, -- 日志级别
-		dnsLog = (server.custom_dnsLog == "1") and true or false, -- DNS 查询记录
-		access = server.custom_access, -- 访问记录
-		error = server.custom_error -- 错误记录
-	} or nil,
-	-- DNS
-	dns = {
-		hosts = {
-			["dns.alidns.com"] = "223.5.5.5",
-			["doh.pub"] = "119.29.29.29"
-		},
-		servers = (server.custom_dns_enable == "1") and { -- Xray 内置 DNS
-			server.custom_dns_local, -- 本地 DNS
-			{
-				address = server.custom_dns_remote, -- 远端 DNS
-				domains = {
-					server.custom_dns_remote_domains -- 远端 DNS 域名列表
-				},
-				skipFallback = true,
-				queryStrategy = "UseIP"
-			}
-		} or nil,
-		queryStrategy = "UseIP"
-	},
-	-- 路由
-	routing = {
-		domainStrategy = "AsIs",
-		rules = {
-			{
-				type = "field",
-				inboundTag = {
-					"dns-in"
-				},
-				outboundTag = "dns-out"
-			}
-		}
+	log = {
+		-- error = "/var/ssrplus.log",
+		loglevel = "warning"
 	},
 	-- 传入连接
-	inbounds = {
-	(local_port ~= "0") and {
+	inbound = (local_port ~= "0") and {
 		-- listening
 		port = tonumber(local_port),
 		protocol = "dokodemo-door",
 		settings = {network = proto, followRedirect = true},
 		sniffing = {
-			enabled = (server.custom_sniffing == "1") and true or false, -- 流量嗅探
-			routeOnly = (server.custom_routeOnly == "1") and true or false, -- 嗅探得到的域名仅用于 Xray 内部路由
+			enabled = true,
 			destOverride = {"http", "tls", "quic"},
-			domainsExcluded = (server.custom_domainsExcluded == "1") and { -- 流量嗅探域名排除列表
+			domainsExcluded = {
 				"courier.push.apple.com",
 				"rbsxbxp-mim.vivox.com",
 				"rbsxbxp.www.vivox.com",
@@ -192,20 +155,9 @@ local Xray = {
 				"rbswxp.vivox.com",
 				"Mijia Cloud",
 				"dlg.io.mi.com"
-			} or nil,
+			}
 		}
 	} or nil,
-	(server.custom_dns_enable == "1") and { -- Xray 内置 DNS
-		port = 5335,
-		protocol = "dokodemo-door",
-		settings = {
-			address = server.custom_dokodemo_door_dns_address, -- 查询非 A 和 AAAA 记录DNS
-			port = 53,
-			network = "udp"
-		},
-		tag = "dns-in"
-	} or nil,
-	},
 	-- 开启 socks 代理
 	inboundDetour = (proto:find("tcp") and socks_port ~= "0") and {
 		{
@@ -216,9 +168,7 @@ local Xray = {
 		}
 	} or nil,
 	-- 传出连接
-	outbounds = {
-	{
-		tag = "proxy",
+	outbound = {
 		protocol = server.v2ray_protocol,
 		settings = outbound_settings,
 		-- 底层传输配置
@@ -276,6 +226,11 @@ local Xray = {
 				maxEarlyData = tonumber(server.ws_ed) or nil,
 				earlyDataHeaderName = server.ws_ed_header or nil
 			} or nil,
+			httpupgradeSettings = (server.transport == "httpupgrade") and {
+				-- httpupgrade
+				host = (server.httpupgrade_host or server.tls_host) or nil,
+                                path = server.httpupgrade_path or ""
+			} or nil,
 			httpSettings = (server.transport == "h2") and {
 				-- h2
 				path = server.h2_path or "",
@@ -305,38 +260,12 @@ local Xray = {
 			}
 		},
 		mux = {
+			-- mux
 			enabled = (server.mux == "1") and true or false, -- Mux
 			concurrency = tonumber(server.concurrency), -- TCP 最大并发连接数
 			xudpConcurrency = tonumber(server.xudpConcurrency), -- UDP 最大并发连接数
 			xudpProxyUDP443 = server.xudpProxyUDP443 -- 对被代理的 UDP/443 流量处理方式
 		}
-	},
-	{
-		protocol = "freedom",
-		settings = {
-			domainStrategy = "ForceIPv6v4"
-		},
-		streamSettings = {
-			sockopt = {
-				tcpFastOpen = true
-			}
-		},
-		tag = "direct"
-	},
-	{
-		protocol = "blackhole",
-		tag = "block"
-	},
-	(server.custom_dns_enable == "1") and { -- Xray 内置 DNS
-		protocol = "dns",
-		settings = {
-			nonIPQuery = server.custom_nonIPQuery -- 非 A 和 AAAA 记录处理方式
-		},
-		proxySettings = (server.custom_nonIPQuery == "skip") and {
-			tag = server.custom_nonIPQuery_outbound_tag -- 非 A 和 AAAA 记录查询方式
-		} or nil,
-		tag = "dns-out"
-	} or nil,
 	}
 }
 local cipher = "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-SHA:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES256-SHA:DHE-RSA-AES128-SHA:DHE-RSA-AES256-SHA:AES128-SHA:AES256-SHA:DES-CBC3-SHA"
@@ -392,7 +321,7 @@ local ss = {
 	reuse_port = true
 }
 local hysteria = {
-	server = (server.port_range and (server.server .. ":" .. server.port_range)) or (server.server_port and (server.server .. ":" .. server.server_port)),
+	server = (server.server_port and (server.port_range and (server.server .. ":" .. server.server_port .. "," .. server.port_range) or server.server .. ":" .. server.server_port) or (server.port_range and server.server .. ":" .. server.port_range or server.server .. ":443")),
 	bandwidth = {
 	up = tonumber(server.uplink_capacity) and tonumber(server.uplink_capacity) .. " mbps" or nil,
 	down = tonumber(server.downlink_capacity) and tonumber(server.downlink_capacity) .. " mbps" or nil 
@@ -401,12 +330,13 @@ local hysteria = {
 		listen = "0.0.0.0:" .. tonumber(socks_port),
 		disable_udp = false
 	} or nil,
-	transport = {
-		type = server.transport_protocol,
-		udp = { 
-			hopInterval = tonumber(server.hopinterval) and tonumber(server.hopinterval) .. "s" or "30s"
-		}
-	},
+	transport = (server.transport_protocol) and {
+		type = (server.transport_protocol) or udp,
+		udp = (server.port_range and (server.hopinterval) and {
+                        hopInterval = (server.port_range and (tonumber(server.hopinterval) .. "s") or nil)
+                } or nil)
+        } or nil,
+
 --[[			
 	tcpTProxy = (proto:find("tcp") and local_port ~= "0") and {
 	listen = "0.0.0.0:" .. tonumber(local_port)
@@ -434,7 +364,7 @@ local hysteria = {
 	auth = server.hy2_auth,
 	tls = (server.tls_host) and {
 		sni = server.tls_host,
-		alpn = server.tls_alpn or nil,
+		--alpn = server.tls_alpn or nil,
 		insecure = (server.insecure == "1") and true or false,
 		pinSHA256 = (server.insecure == "1") and server.pinsha256 or nil
 	} or {
